@@ -25,9 +25,9 @@ def env_creator(_):
     base_env = sumo_rl.parallel_env(
         net_file="/home/jay/SUMO_Example/map.net.xml",
         route_file="/home/jay/SUMO_Example/routes.rou.xml",
-        out_csv_name="SUMO-RL/outputs/nairobi_CBD/ppo",
+        out_csv_name="./outputs/nairobi_CBD/ppo",
         use_gui=False,
-        num_seconds=1000,
+        num_seconds=800,
     )
 
     env = ss.pad_observations_v0(base_env)
@@ -45,7 +45,7 @@ if __name__ == "__main__":
     config = (
         PPOConfig()
         .environment(env=env_name, disable_env_checking=True)
-        .rollouts(num_rollout_workers=2, rollout_fragment_length=64)
+        .rollouts(num_rollout_workers=2, rollout_fragment_length='auto')
         .training(
             train_batch_size=512,
             lr=2e-5,
@@ -67,7 +67,7 @@ if __name__ == "__main__":
     tune.run(
         "PPO",
         name="PPO",
-        stop={"timesteps_total": 100000},
+        stop={"timesteps_total": 10_000},
         checkpoint_freq=10,
         local_dir=os.path.join(os.path.expanduser("~/ray_results"), env_name),
         config=config.to_dict(),

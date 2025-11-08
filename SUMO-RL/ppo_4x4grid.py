@@ -1,7 +1,6 @@
 import os
 import sys
 
-
 if "SUMO_HOME" in os.environ:
     tools = os.path.join(os.environ["SUMO_HOME"], "tools")
     sys.path.append(tools)
@@ -17,7 +16,6 @@ from ray.rllib.env.wrappers.pettingzoo_env import ParallelPettingZooEnv
 from ray.tune.registry import register_env
 
 import sumo_rl
-
 
 if __name__ == "__main__":
     # Use:
@@ -38,7 +36,7 @@ if __name__ == "__main__":
             sumo_rl.parallel_env(
                 net_file="/home/jay/RL-examples/SUMO-RL/inputs/4x4.net.xml",
                 route_file="/home/jay/RL-examples/SUMO-RL/inputs/4x4c1c2c1c2.rou.xml",
-                out_csv_name="SUMO-RL/outputs/4x4grid/ppo",
+                out_csv_name="./outputs/4x4grid/ppo",
                 use_gui=False,
                 num_seconds=1000,
             )
@@ -72,7 +70,7 @@ if __name__ == "__main__":
         name="PPO",
         stop={"timesteps_total": 100000},
         checkpoint_freq=10,
-        local_dir = os.path.join(os.path.expanduser("~/ray_results"), env_name),
+        local_dir=os.path.join(os.path.expanduser("~/ray_results"), env_name),
         resume="AUTO",
         config=config.to_dict(),
     )
