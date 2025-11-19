@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RouteWiseAI - Live Simulation</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        
+        /* Map fills the screen */
+        #map { height: 100vh; width: 100vw; }
+
+        /* The Floating Control Panel */
+        #ui-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 1000; /* Above the map */
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            min-width: 200px;
+        }
+
+        h2 { margin: 0 0 10px 0; font-size: 18px; color: #333; }
+        
+        .stat-row { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 14px; }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        .status-connected { background-color: #2ecc71; } /* Green */
+        .status-disconnected { background-color: #e74c3c; } /* Red */
+    </style>
+</head>
+<body>
+
+    <div id="ui-panel">
+        <h2>RouteWiseAI Monitor</h2>
+        <div class="stat-row">
+            <span>Status:</span>
+            <span>
+                <span id="status-light" class="status-indicator status-disconnected"></span>
+                <span id="status-text">Disconnected</span>
+            </span>
+        </div>
+        <div class="stat-row">
+            <span>Active Vehicles:</span>
+            <span id="vehicle-count">0</span>
+        </div>
+        <div class="stat-row">
+            <span>Sim Time:</span>
+            <span id="sim-step">0</span>
+        </div>
+    </div>
+
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-rotatedmarker@0.2.0/leaflet.rotatedMarker.js"></script>
+
+    <script>
+        // --- 1. MAP INITIALIZATION ---
+        // Initialize map centered on a default location (e.g., Nairobi). 
+        // Note: The first vehicle update will re-center the map automatically.
+        const map = L.map('map').setView([-1.2921, 36.8219], 15);
+
+        // Add OpenStreetMap tiles
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+
+        // --- 2. ASSETS (The Car Icon) ---
+        // Using an SVG string directly so you don't need an external image file.
+        const carSvgString = `
+        <svg width="24" height="48" viewBox="0 0 24 48" xmlns="http://www.w3.org/2000/svg">
+            <path d="M22 12H2C0.9 12 0 12.9 0 14V34C0 35.1 0.9 36 2 36V44C2 45.1 2.9 46 4 46H6C7.1 46 8 45.1 8 44V36H16V44C16 45.1 16.9 46 18 46H20C21.1 46 22 45.1 22 44V36C23.1 36 24 35.1 24 34V14C24 12.9 23.1 12 22 12Z" fill="#3498db"/>
+            <path d="M4 4L20 4L18 12H6L4 4Z" fill="#2980b9"/>
+        </svg>`;
+        
+        const carIconUrl = 'data:image/svg+xml;base64,' + btoa(carSvgString);
+
+        const carIcon = L.icon({
+            iconUrl: carIconUrl,
+            iconSize: [24, 48],   // Width, Height
+            iconAnchor: [12, 24]  // Center point (half width, half height) to rotate correctly
+        });
+
+        // --- 3. STATE MANAGEMENT ---
+        // Dictionary to store markers by Vehicle ID: { "veh_01": MarkerObject, ... }
+        const vehicleMarkers = {}; 
+        let isFirstUpdate = true;
+
+        // UI Elements
+        const statusText = document.getElementById('status-text');
+        const statusLight = document.getElementById('status-light');
+        const countDisplay = document.getElementById('vehicle-count');
+        const stepDisplay = document.getElementById('sim-step');
+
+        // --- 4. WEBSOCKET CONNECTION ---
+        function connectWebSocket() {
+            // Ensure this matches your FastAPI endpoint
+            const socket = new WebSocket("ws://localhost:8000/ws/simulation");
+
+            socket.onopen = () => {
+                console.log("Connected to RouteWiseAI Backend");
+                statusText.innerText = "Live";
+                statusLight.className = "status-indicator status-connected";
+            };
+
+            socket.onclose = () => {
+                console.log("Disconnected");
+                statusText.innerText = "Disconnected";
+                statusLight.className = "status-indicator status-disconnected";
+                // Optional: Try to reconnect after 3 seconds
+                setTimeout(connectWebSocket, 3000);
+            };
+
+            socket.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                updateSimulation(data);
+            };
+        }
+
+        // --- 5. CORE LOGIC ---
+        function updateSimulation(data) {
+            const step = data.step;
+            const vehicles = data.vehicles; // Array of {id, lat, lon, angle}
+            
+            // Update UI
+            stepDisplay.innerText = step;
+            countDisplay.innerText = vehicles.length;
+
+            // Track which IDs are present in this update
+            const currentFrameIds = new Set();
+
+            vehicles.forEach(v => {
+                currentFrameIds.add(v.id);
+
+                // Handle Coordinate issues: check if lat/lon are valid
+                if (v.lat === 0 || v.lon === 0) return;
+
+                if (vehicleMarkers[v.id]) {
+                    // A. UPDATE EXISTING CAR
+                    const marker = vehicleMarkers[v.id];
+                    marker.setLatLng([v.lat, v.lon]);
+                    
+                    // setRotationAngle comes from the plugin. 
+                    // SUMO Angle (0=North, Clockwise) matches Leaflet Plugin expectations usually.
+                    marker.setRotationAngle(v.angle); 
+                } else {
+                    // B. CREATE NEW CAR
+                    const newMarker = L.marker([v.lat, v.lon], {
+                        icon: carIcon,
+                        rotationAngle: v.angle
+                    }).addTo(map);
+                    
+                    // Add popups or interactions here
+                    newMarker.bindPopup(`<b>ID:</b> ${v.id}<br><b>Type:</b> ${v.type}`);
+
+                    vehicleMarkers[v.id] = newMarker;
+                }
+            });
+
+            // C. GARBAGE COLLECTION (Remove cars that left)
+            // Iterate over our local storage, if ID is not in current frame, remove it.
+            for (let id in vehicleMarkers) {
+                if (!currentFrameIds.has(id)) {
+                    map.removeLayer(vehicleMarkers[id]);
+                    delete vehicleMarkers[id];
+                }
+            }
+
+            // Optional: Center map on first vehicle if it's the very first frame
+            if (isFirstUpdate && vehicles.length > 0) {
+                map.setView([vehicles[0].lat, vehicles[0].lon], 17);
+                isFirstUpdate = false;
+            }
+        }
+
+        // Start the connection
+        connectWebSocket();
+
+    </script>
+</body>
+</html>

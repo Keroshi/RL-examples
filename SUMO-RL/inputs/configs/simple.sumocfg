@@ -1,0 +1,12 @@
+<configuration>
+   <input>
+      <net-file value="/home/jay/RL-examples/SUMO-RL/inputs/nets/map.net.xml"/>
+      <route-files value="/home/jay/RL-examples/SUMO-RL/inputs/routes/routes.rou.xml"/>
+   </input>
+
+
+   <gui_only>
+      <gui-settings-file value="/home/jay/RL-examples/SUMO-RL/inputs/configs/settings.xml"/>
+   </gui_only>
+     
+</configuration>

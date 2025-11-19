@@ -18,6 +18,7 @@ try:
             pos = traci.vehicle.getPosition(vid)  # (x, y) position in meters
             print(f"Step {step}: Vehicle {vid} at position {pos}")
             print(f"Step {step}: Traffic Light {vid} is {phase}")
+                
 
         step += 1
 
